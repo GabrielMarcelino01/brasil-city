@@ -151,3 +151,22 @@ body.chat-open #chat-prev{display:none}
 .ct-info b .vipseal .ic{width:20px;height:20px}
 .carteira .iglink{color:#fff;border-bottom-color:var(--gold)}
 .carteira .iglink:after{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 5h10v10M19 5L6 18' fill='none' stroke='%23ffc425' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+/* ===== checkout Pix real (Mercado Pago) ===== */
+.px-form{display:flex;flex-direction:column;gap:6px;background:rgba(255,255,255,.07);border:2px solid rgba(255,255,255,.16);border-radius:var(--r2);padding:12px}
+.px-lb{font-weight:900;font-size:13.5px;color:#fff}.px-lb small{font-weight:700;color:#9aa6c9;font-size:11.5px}
+.px-in{width:100%;box-sizing:border-box;font:800 16px var(--f-body,"Nunito"),system-ui,sans-serif;color:var(--ink);background:#fff;border:3px solid #000;border-radius:12px;padding:11px 12px;box-shadow:inset 0 3px 0 #e8ecf5;outline:none;margin-bottom:4px}
+.px-in:focus{border-color:var(--blue);box-shadow:inset 0 3px 0 #e8ecf5,0 0 0 3px rgba(47,128,237,.35)}
+.px-for{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;color:#c9d1ea}.px-for .ic{width:18px;height:18px}.px-for b{color:var(--gold)}
+.px-err{margin:2px 0 0;background:#ffe4e3;color:var(--danger-d);border:2px solid var(--danger);border-radius:10px;padding:7px 9px;font-size:13px;font-weight:800}
+.qrbox.live{width:212px;height:212px;padding:8px}.qrbox .qrimg{width:100%;height:100%;display:block;image-rendering:pixelated;border-radius:8px}
+.px-timer{display:flex;align-items:center;justify-content:center;gap:6px;font-weight:800;font-size:13.5px;color:#dfe5f7}.px-timer .ic{width:18px;height:18px}.px-timer b{font-family:var(--f-display);font-weight:400;font-size:17px;color:var(--gold);letter-spacing:.03em}
+.px-code{background:#0d1328;border:2px dashed rgba(255,255,255,.28);border-radius:12px;padding:8px 10px;max-height:44px;overflow:hidden}
+.px-code code{display:block;font:700 11px/1.35 ui-monospace,Menlo,Consolas,monospace;color:#b9c4e6;word-break:break-all;user-select:all;-webkit-user-select:all}
+.px-wait{display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:10px;background:rgba(47,128,237,.14);border:2px solid rgba(47,128,237,.5);border-radius:var(--r2);padding:10px 12px}
+.px-wait b{font-family:var(--f-display);font-weight:400;font-size:17px;color:#fff}.px-wait small{grid-column:2;color:#c9d1ea;font-weight:700;font-size:12px}.px-wait .px-spin{grid-row:span 2}
+.px-spin{display:inline-block;width:18px;height:18px;border-radius:50%;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;animation:pxspin .8s linear infinite;vertical-align:-.25em}
+.btn.gold .px-spin{border-color:rgba(0,0,0,.2);border-top-color:var(--ink)}
+@keyframes pxspin{to{transform:rotate(360deg)}}
+.pix .btn .ic{width:1.15em;height:1.15em;vertical-align:-.22em;margin-right:4px}
+.pix .btn.primary.ok{--c:var(--green);--cd:var(--green-d);--tc:#fff;color:#fff;text-shadow:var(--outline-s)}
+.px-safe{margin-top:4px!important}

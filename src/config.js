@@ -1,6 +1,8 @@
 // ===== Configuração rápida =====
 // @ do prefeito (sem o "@"). Troque aqui para mudar quem é o prefeito.
-export const MAYOR_HANDLE = 'gabriel.marques';
+export const MAYOR_HANDLE = 'ogabmarques_';
+// @s reservados: só o prefeito (com o token do link privado) usa esses nomes
+export const RESERVED_HANDLES = ['ogabmarques_', 'gabriel.marques', 'gabimarques_'];
 export const MAYOR_NAME = 'Gabriel Marques';
 // Cidade padrão do prefeito no atalho ?prefeito=1 (pode passar &lado=norte&uf=BA&cidade=Salvador)
 export const MAYOR_DEFAULT = { side: 'sul', uf: 'SP', cidade: 'São Paulo' };

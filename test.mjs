@@ -1,4 +1,4 @@
-// Testes automatizados v3: node test.mjs norte | sul | prefeito
+// Testes automatizados v3: node test.mjs norte | sul | prefeito | vip   (Pix com Mercado Pago simulado: node test_pix.mjs)
 import { chromium } from 'playwright';
 const mode = process.argv[2] || 'norte'; const side = mode === 'vip' ? 'sul' : mode;
 const url = 'file:///workspace/brasil_game/dist/index.html';
@@ -53,7 +53,7 @@ if (mode === 'vip') {
   ok(await ev(() => [...document.querySelectorAll('.cm.me')].length >= 3 && !!document.querySelector('.cm.me .vipseal') && document.querySelector('#chat-lim').textContent.includes('ilimitado')), 'mensagens do VIP com selo dourado');
 } else if (side === 'prefeito') {
   await page.goto(url + '?prefeito=1'); await W(3500);
-  ok(await ev(() => __game.S.mayor && __game.S.handle === 'gabriel.marques'), 'entra como prefeito via ?prefeito=1');
+  ok(await ev(() => __game.S.mayor && __game.S.handle === 'ogabmarques_' && __game.S.mayorDev === true), 'entra como prefeito via ?prefeito=1 (atalho só de teste local)');
   ok(await ev(() => __game.S.prof === 'prefeito'), 'profissão Prefeito');
   ok(await ev(() => !!document.querySelector('.modal')), 'modal de sequência diária aparece');
   await page.click('#claimlogin', { force: true }); await W(900);
@@ -78,15 +78,20 @@ if (mode === 'vip') {
   ok(await ev(() => !!document.querySelector('.quiz')), 'minigame do prefeito (decisões) abre');
   await ev(() => __mg.win()); await W(1500); await page.click('#mok', { force: true }); await W(1500);
   ok(await ev(() => __game.S.stats.totalWorks === 1), 'trabalho do prefeito conta');
-  // cadastro com o @ do prefeito também vira prefeito
+  // cadastro com o @ do prefeito NÃO vira prefeito: @ reservado
   await page.goto(url); await ev(() => localStorage.clear()); await page.goto(url); await W(1500);
   await page.click('.cta[data-go=start]', { force: true }); await W(300);
-  await page.fill('#su-h', '@Gabriel.Marques'); await page.click('#su-ok', { force: true }); await W(300);
+  for (const h of ['@Gabriel.Marques', '@ogabmarques_']) {
+    await page.fill('#su-h', h); await page.click('#su-ok', { force: true }); await W(300);
+    ok(await ev(() => !!document.querySelector('#su-h') && document.querySelector('#toast').textContent.includes('reservado')), `cadastro com ${h} é recusado (@ reservado)`);
+  }
+  await page.fill('#su-h', '@gabriel.marques2'); await page.click('#su-ok', { force: true }); await W(300);
   await page.click('.age >> nth=3', { force: true }); await W(400); await page.click('.side2.sul', { force: true }); await W(400);
   await page.click('.uf2[data-uf=SP]', { force: true }); await W(400); await page.fill('#su-q', 'sao paulo'); await W(300);
-  await page.click('.city2 >> nth=0', { force: true }); await W(3500);
-  ok(await ev(() => __game.S?.mayor === true && __game.S.cidade === 'São Paulo'), 'cadastro com @gabriel.marques vira prefeito (pula profissão)');
-  ok(await ev(() => __game.S.plan === 'vip' && !__game.S.veiculo && !document.querySelector('.plan')), 'prefeito já é VIP (sem tela de planos, sem carro equipado à força)');
+  await page.click('.city2 >> nth=0', { force: true }); await W(500);
+  ok(await ev(() => !!document.querySelector('.prof2')), 'outro @ segue o cadastro normal (escolhe profissão)');
+  await page.click('.prof2 >> nth=0', { force: true }); await W(600); await page.click('#pl-free', { force: true }); await W(3500);
+  ok(await ev(() => __game.S && !__game.S.mayor && __game.S.plan === 'free'), 'entra como morador comum, sem prefeito nem VIP');
 } else {
   await page.goto(url); await ev(() => localStorage.clear()); await page.goto(url); await W(1500);
   ok(await ev(() => !document.querySelector('#landing').hidden), 'landing visível');
@@ -115,7 +120,9 @@ if (mode === 'vip') {
   ok(await ev(() => { const v = document.querySelector('.plan.vip'); return v.querySelector('.pl-price strong').textContent === 'R$ 19,90' && v.querySelector('.pl-price s').textContent.includes('R$ 49,90'); }), 'preço VIP R$ 19,90 com âncora R$ 49,90 riscada');
   ok(await ev(() => { const t = document.querySelector('.plan.vip').textContent.replace(/\u00a0/g, ' '); return ['Chat ilimitado', 'Selo dourado', 'Instagram', 'Porsche', 'skins lendárias', '200 m²'].every(x => t.includes(x)); }), 'benefícios do VIP listados');
   await page.click('#pl-vip', { force: true }); await W(500);
-  ok(await ev(() => !!document.querySelector('.pix') && document.querySelector('.pix').textContent.includes('Pagamento via Pix em breve')), 'VIP abre checkout Pix (em breve)');
+  ok(await ev(() => !!document.querySelector('.pix #px-email') && !!document.querySelector('#px-go') && document.querySelector('.pix').textContent.includes('Pagamento seguro via Mercado Pago · Pix') && !document.querySelector('.pix').textContent.includes('em breve')), 'VIP abre checkout Pix real (e-mail + gerar Pix)');
+  await page.click('#px-go', { force: true }); await W(300);
+  ok(await ev(() => !document.querySelector('#px-err').hidden && document.querySelector('#px-err').textContent.includes('e-mail')), 'sem e-mail: erro em PT-BR');
   await page.click('#px-free', { force: true }); await W(3500);
   ok(await ev((side) => __game.S && __game.S.side === side && !__game.S.mayor && __game.S.handle === 'teste.' + side, side), 'jogador criado e dentro do jogo');
   ok(await ev(() => __game.S.plan === 'free' && !document.querySelector('#h-me .vipseal') && !!document.querySelector('#b-vip')), 'entra no plano grátis (sem selo, com botão Seja VIP)');

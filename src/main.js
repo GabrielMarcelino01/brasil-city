@@ -2,7 +2,8 @@ import { World, rng } from './world.js';
 import { SIDES, UF_NOME, LEVEL_XP, MAX_LEVEL, PROFISSOES, PROF_PREFEITO, BUILD_STAGES, LOJA, NEGOCIOS, OBRAS_CIDADE, STAGES, MISSOES, LOGIN_REWARDS, CONQUISTAS, NOMES, SUFIXOS, GAME_NAME, CAPITAIS } from './data.js';
 import { MAYOR_HANDLE, MAYOR_NAME, MAYOR_DEFAULT, PLANS } from './config.js';
 import { grantVip, isVip, ensurePlan, lotM2, VIP_CARS, VIP_SKINS } from './vip.js';
-import { plansHTML, checkoutHTML, carPickerHTML, skinPickerHTML } from './vipui.js';
+import { plansHTML, mountCheckout, carPickerHTML, skinPickerHTML } from './vipui.js';
+import { verifyVipToken, loadPending, pendingExpired, mayorLogin, verifyMayorToken } from './pay.js';
 import { initChat } from './chat/chat.js';
 import { ENGINES, MG_NAMES } from './minigames.js';
 import { startIconObserver, stripEmoji, ico } from './icons.js';
@@ -16,7 +17,8 @@ const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt
 const ENERGY_COST = 10, ENERGY_REGEN_S = 12, TRASH_COST = 3, TREE_COST = 60, PAVE_COST = 250;
 const TOTAL_LOTS = 128;
 const params = new URLSearchParams(location.search);
-const VIP_TEST = params.get('vip') === '1'; // libera o VIP sem pagamento (teste/demonstração)
+const IS_LOCAL = location.protocol === 'file:' || ['localhost', '127.0.0.1'].includes(location.hostname);
+const VIP_TEST = IS_LOCAL && params.get('vip') === '1'; // libera o VIP sem pagamento SÓ em teste local (nunca no site no ar)
 // itens exclusivos do VIP entram na loja (carros e skins lendárias)
 for (const c of VIP_CARS) LOJA.veiculos.push({ id: c.id, nome: c.nome, icon: c.icon, desc: c.desc, vel: c.vel, vip: true });
 for (const k of VIP_SKINS) LOJA.roupas.push({ id: k.id, nome: k.nome, icon: k.icon, desc: k.tipo, tipo: 'skin', vip: true });
@@ -85,14 +87,14 @@ function residentsSim() { return Math.floor(12 + (hoursSince(S.city.created) + (
 // ---------- criação / carregamento ----------
 function newCity() { return { created: Date.now(), cleaned: [], trees: [], paved: [], obras: [], obra: { id: 'praca', prog: 0, ts: Date.now() }, caixa: 2000, stageSeen: 0, bonus: 0, decretos: {} }; }
 function createPlayer(d) {
-  const mayor = d.handle === MAYOR_HANDLE || !!d.mayor; const r = rng(seedOf(d.handle + d.cidade));
+  const mayor = !!d.mayor && (!!d.mayorToken || (d.mayorDev && IS_LOCAL)); const r = rng(seedOf(d.handle + d.cidade));
   S = { v: 3, nome: mayor ? MAYOR_NAME : d.handle, handle: d.handle, idade: d.idade || null, side: d.side, uf: d.uf, cidade: d.cidade, mayor,
     numero: String(1 + Math.floor(r() * 99998)).padStart(5, '0'), criadoEm: Date.now(), prof: mayor ? 'prefeito' : d.prof, xp: 0, dinheiro: 200,
     energia: 100, energiaTs: Date.now(), casa: 'casa_simples', veiculo: null, roupa: 'camisa_verde', chapeu: null, inventario: ['casa_simples', 'camisa_verde'],
     negocios: {}, lote: null, city: newCity(), stats: { totalWorks: 0, perfeitos: 0, reputacao: 0, ganhos: 0, trash: 0, trees: 0, paved: 0, builds: 0, obras: 0 },
     passivaTs: Date.now(), missions: null, login: { last: null, streak: 0, claimed: null }, conq: [], lvSeen: 1, tut: 0, plan: 'free', skin: null };
-  if (mayor) grantVip(S, { source: 'prefeito' });
-  if (d.plan === 'vip') { grantVip(S, { source: VIP_TEST ? 'teste' : 'pix' }); if (d.vipCar) { S.veiculo = d.vipCar; S.vip.car = d.vipCar; } if (d.vipSkin) { S.skin = d.vipSkin; S.vip.skin = d.vipSkin; } }
+  if (mayor) { grantVip(S, { source: 'prefeito' }); if (d.mayorToken) { S.mayorToken = d.mayorToken; S.mayorVerifiedAt = Date.now(); } else S.mayorDev = true; }
+  if (d.plan === 'vip' && (d.vipToken || VIP_TEST)) { grantVip(S, { source: d.vipToken ? 'pix' : 'teste', txid: d.vipPid || null }); if (d.vipToken) { S.vip.token = d.vipToken; S.vip.verifiedAt = Date.now(); } if (d.vipCar) { S.veiculo = d.vipCar; S.vip.car = d.vipCar; } if (d.vipSkin) { S.skin = d.vipSkin; S.vip.skin = d.vipSkin; } }
   save();
 }
 function migrate(s) { s.stats = Object.assign({ totalWorks: 0, perfeitos: 0, reputacao: 0, ganhos: 0, trash: 0, trees: 0, paved: 0, builds: 0, obras: 0 }, s.stats); s.city ||= newCity(); s.city.decretos ||= {}; s.conq ||= []; s.login ||= { last: null, streak: 0 }; s.negocios ||= {}; s.lvSeen ||= levelOf(s.xp); ensurePlan(s); if (s.mayor && !isVip(s)) grantVip(s, { source: 'prefeito' }); return s; }
@@ -126,6 +128,8 @@ function enterGame() {
   buildWorld(false); ui.innerHTML = ''; $('#hud').hidden = false; $('#joy').hidden = false; startChat(); renderHUD(); startCtxLoop();
   dailyLogin(); checkAch(true);
   if (isVip(S) && !S.mayor && !S.vip.car) enqueue(() => showCarPicker(true));
+  revalidateVip(); revalidateMayor();
+  const pend = !isVip(S) && loadPending(S.handle); if (pend && !pendingExpired(pend)) enqueue(() => showVipCheckout());
   if (!S.tut) { S.tut = 1; save(); enqueue(() => S.mayor ? toast(`👑 Bem-vindo, Prefeito! Abra o 🏛️ Gabinete pra lançar obras. ${S.cidade} ainda é uma Vila.`, 7000) : toast(`👋 ${S.cidade} ainda é uma Vila! Esse 🪧 terreno na sua frente está livre: toque em REIVINDICAR.`, 7000)); }
 }
 function startChat() {
@@ -480,12 +484,44 @@ function showPlans(from = 'hud') {
   $('#pl-vip').onclick = () => (VIP_TEST ? unlockVip('teste') : showVipCheckout());
 }
 function showVipCheckout() {
-  modal(`<h2>Finalizar VIP</h2>${checkoutHTML()}`, 'wide vipm');
-  $('#px-free').textContent = 'Continuar grátis por enquanto'; $('#px-free').onclick = () => closeModal(); $('#px-back').onclick = () => showPlans('checkout');
+  if (isVip(S)) return;
+  modal(`<h2>Finalizar VIP</h2><div id="pxroot"></div>`, 'wide vipm');
+  mountCheckout($('#pxroot'), { handle: S.handle, toast, onFree: () => closeModal(), onBack: () => showPlans('checkout'),
+    onApproved: ({ token, pid }) => { closeModal(true); toast('Pagamento aprovado! Agora você é VIP.', 4500); unlockVip('pix', pid, token); } });
+}
+/** Reconfere no servidor o token do VIP pago (editar o save não basta). Sem internet: mantém se já foi validado antes. */
+async function revalidateVip() {
+  if (!S || !isVip(S) || S.mayor) return;
+  if (S.vip?.source === 'teste' && VIP_TEST) return;
+  const tok = S.vip?.token; const res = tok ? await verifyVipToken(tok, S.handle) : false;
+  if (res === true) { S.vip.verifiedAt = Date.now(); save(); return; }
+  if (res === null && S.vip?.verifiedAt) return; // falha de rede: mantém o VIP já validado
+  revokeVip();
+}
+/** O prefeito precisa do token assinado (vindo do link privado). Sem ele, vira morador comum. */
+async function revalidateMayor() {
+  if (!S || !S.mayor) return;
+  if (S.mayorDev && IS_LOCAL) return;
+  const res = S.mayorToken ? await verifyMayorToken(S.mayorToken) : false;
+  if (res === true) { S.mayorVerifiedAt = Date.now(); save(); return; }
+  if (res === null && S.mayorVerifiedAt) return; // sem internet: mantém
+  demoteMayor();
+}
+function demoteMayor() {
+  S.mayor = false; delete S.mayorToken; delete S.mayorDev; delete S.mayorVerifiedAt; S.nome = S.handle; if (S.prof === 'prefeito') S.prof = PROFISSOES.find(p => p.nivel === 1)?.id;
+  if (S.vip?.source === 'prefeito') { S.plan = 'free'; delete S.vip; }
+  save(); toast('Esse acesso de prefeito não é válido. Você entra como morador.', 5000); setTimeout(() => location.replace(location.pathname), 1800);
+}
+function revokeVip() {
+  const vipIds = [...VIP_CARS, ...VIP_SKINS].map(x => x.id);
+  S.plan = 'free'; delete S.vip; if (vipIds.includes(S.veiculo)) S.veiculo = null; if (vipIds.includes(S.skin)) S.skin = null;
+  S.inventario = (S.inventario || []).filter(i => !vipIds.includes(i)); save();
+  if (world) { refreshAvatar(); world.setVehicle(vehicleModel(), homeFront()); if (S.lote) world.setLot(S.lote.idx, myLotInfo(), true); }
+  if (S.hudReady) renderHUD(); chat?.refresh(); toast('Não conseguimos confirmar o VIP deste aparelho. Você continua no plano grátis.', 6000);
 }
 /** Efeitos no jogo depois de grantVip (o webhook do Pix chama isto via window.BrasilCity.grantVip). */
-function unlockVip(source = 'pix', txid = null) {
-  grantVip(S, { source, txid }); save(); confetti(); sfx('level');
+function unlockVip(source = 'pix', txid = null, token = null) {
+  grantVip(S, { source, txid }); if (token) { S.vip.token = token; S.vip.txid = txid; S.vip.source = source; S.vip.verifiedAt = Date.now(); } save(); confetti(); sfx('level');
   refreshAvatar(); if (S.lote) world.setLot(S.lote.idx, myLotInfo(), true); renderHUD(); chat?.refresh();
   showCarPicker(true);
 }
@@ -585,7 +621,7 @@ window.__game = {
 };
 
 // ponto de integração para o checkout real (Pix): o front chama isto quando o servidor confirmar o pagamento
-window.BrasilCity = { grantVip: (opts = {}) => { if (!S) return false; if (S.hudReady) unlockVip(opts.source || 'pix', opts.txid || null); else { grantVip(S, opts); save(); } return true; }, isVip: () => isVip(S) };
+window.BrasilCity = { grantVip: (opts = {}) => { if (!S || !VIP_TEST) return false; if (S.hudReady) unlockVip(opts.source || 'pix', opts.txid || null); else { grantVip(S, opts); save(); } return true; }, isVip: () => isVip(S) };
 
 // ---------- boot ----------
 startIconObserver(document.body);
@@ -596,10 +632,20 @@ function withLoading(fn, msg = 'Carregando sua cidade…') { if (!bootEl) return
 document.fonts?.load?.('40px "Lilita One"').catch(() => {});
 function begin(d) { createPlayer(d); withLoading(enterGame); }
 const saved = load();
-if (params.get('prefeito') === '1') {
+const mayorParam = params.get('prefeito');
+if (mayorParam && mayorParam !== '1') { // link privado do prefeito: troca a chave por um token e tira a chave da URL
+  params.delete('prefeito'); history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : '') + location.hash);
   const side = params.get('lado') || MAYOR_DEFAULT.side, uf = params.get('uf') || (side === MAYOR_DEFAULT.side ? MAYOR_DEFAULT.uf : 'CE'), cidade = params.get('cidade') || (uf === MAYOR_DEFAULT.uf ? MAYOR_DEFAULT.cidade : CAPITAIS[uf]);
-  if (saved?.mayor && saved.cidade === cidade && saved.side === side) { S = migrate(saved); withLoading(enterGame); } else begin({ handle: MAYOR_HANDLE, side, uf, cidade, mayor: true });
-} else {
+  mayorLogin(mayorParam).then((token) => {
+    if (!token) { toast('Link de prefeito inválido.', 5000); return startLanding(); }
+    if (saved?.mayor && saved.cidade === cidade && saved.side === side) { S = migrate(saved); S.mayorToken = token; S.mayorVerifiedAt = Date.now(); delete S.mayorDev; S.handle = MAYOR_HANDLE; save(); withLoading(enterGame); }
+    else begin({ handle: MAYOR_HANDLE, side, uf, cidade, mayor: true, mayorToken: token });
+  });
+} else if (mayorParam === '1' && IS_LOCAL) { // atalho só pra teste local
+  const side = params.get('lado') || MAYOR_DEFAULT.side, uf = params.get('uf') || (side === MAYOR_DEFAULT.side ? MAYOR_DEFAULT.uf : 'CE'), cidade = params.get('cidade') || (uf === MAYOR_DEFAULT.uf ? MAYOR_DEFAULT.cidade : CAPITAIS[uf]);
+  if (saved?.mayor && saved.cidade === cidade && saved.side === side) { S = migrate(saved); withLoading(enterGame); } else begin({ handle: MAYOR_HANDLE, side, uf, cidade, mayor: true, mayorDev: true });
+} else startLanding();
+function startLanding() {
   const start = (preSide) => { hideLanding(); startSignup({ preSide, toast, vipTest: VIP_TEST, onDone: (d) => begin(d), onCancel: () => showLandingAgain() }); };
   initLanding({ toast, savedHandle: saved?.handle, onStart: start, onContinue: () => { S = migrate(saved); withLoading(enterGame); } });
   if (params.get('jogar') === '1') start();

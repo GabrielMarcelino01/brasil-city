@@ -1,9 +1,9 @@
 // ===== Landing page + cadastro (DOM estático, sem 3D) =====
 import { SIDES, REGIAO_UFS, UF_NOME, CAPITAIS, PROFISSOES } from './data.js';
 import { MUNICIPIOS } from './municipios.js';
-import { MAYOR_HANDLE } from './config.js';
+import { RESERVED_HANDLES } from './config.js';
 import { MG_NAMES } from './minigames.js';
-import { plansHTML, checkoutHTML, carPickerHTML, skinPickerHTML } from './vipui.js';
+import { plansHTML, mountCheckout, carPickerHTML, skinPickerHTML } from './vipui.js';
 
 const $ = (s) => document.querySelector(s);
 const fmtN = (n) => Math.floor(n).toLocaleString('pt-BR');
@@ -46,7 +46,7 @@ export function startSignup({ preSide, onDone, onCancel, toast, vipTest = false 
   const draft = { side: preSide || null, plan: 'free' }; let step = 0, sub = null;
   const box = $('#signup'), body = $('#su-body'); box.hidden = false; box.classList.remove('su-vip');
   $('#su-back').onclick = () => { if (sub) { sub === 'skin' ? carro() : plano(); return; } if (step === 0) { box.hidden = true; onCancel(); } else go(step - 1); };
-  const isMayor = () => draft.handle === MAYOR_HANDLE;
+  const isMayor = () => false; // prefeito só entra pelo link privado
   function go(n) {
     step = n; sub = null; const total = isMayor() ? 5 : 7; $('#su-prog').style.width = ((n + 1) / total * 100) + '%'; $('#su-n').textContent = `${n + 1}/${total}`;
     body.style.animation = 'none'; body.offsetHeight; body.style.animation = ''; box.scrollTop = 0; box.classList.toggle('su-vip', STEPS[n] === 'plano');
@@ -56,12 +56,12 @@ export function startSignup({ preSide, onDone, onCancel, toast, vipTest = false 
   function handle() {
     body.innerHTML = `<h2>Qual é o seu @ do Instagram?</h2><p class="hint">Ele vira o nome do seu morador e aparece em cima da sua cabeça na cidade.</p>
       <div class="igin"><span>@</span><input id="su-h" maxlength="30" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="seu.usuario" value="${esc(draft.handle || '')}"></div>
-      <div class="ig-badge">🔒 Nesta versão de teste nada é enviado pra internet.</div>
+      <div class="ig-badge">🔒 Seu progresso fica salvo neste aparelho.</div>
       <button class="su-next" id="su-ok">Continuar ➜</button><p class="su-foot">Ao continuar você concorda em jogar limpo 😉</p>`;
     const inp = $('#su-h'), ok = $('#su-ok');
     const clean = () => inp.value.trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9._]/g, '');
     const val = () => { ok.disabled = clean().length < 2; }; inp.oninput = val; val();
-    const next = () => { const h = clean(); if (h.length < 2) return toast('Digite seu @ (mínimo 2 letras)'); draft.handle = h; go(1); };
+    const next = () => { const h = clean(); if (h.length < 2) return toast('Digite seu @ (mínimo 2 letras)'); if (RESERVED_HANDLES.includes(h)) return toast('Esse @ é reservado. Escolha outro.'); if (draft.vipToken && h !== draft.vipHandle) return toast(`Seu VIP foi pago para @${draft.vipHandle}. Use esse @.`); draft.handle = h; go(1); };
     ok.onclick = next; inp.onkeydown = (e) => { if (e.key === 'Enter') next(); };
     setTimeout(() => inp.focus({ preventScroll: true }), 250);
   }
@@ -105,6 +105,7 @@ export function startSignup({ preSide, onDone, onCancel, toast, vipTest = false 
     body.querySelectorAll('.prof2').forEach(b => b.onclick = () => { draft.prof = b.dataset.p; go(6); });
   }
   function plano() {
+    if (draft.vipToken) return carro(); // já pagou: não volta pra escolha de plano
     sub = null; box.classList.add('su-vip');
     body.innerHTML = `<h2>Escolha seu plano</h2><p class="hint">Jogue de graça pra sempre ou entre como <b>VIP</b> com tudo liberado.</p>${plansHTML({ test: vipTest })}`;
     $('#pl-free').onclick = () => { draft.plan = 'free'; finish(); };
@@ -112,8 +113,10 @@ export function startSignup({ preSide, onDone, onCancel, toast, vipTest = false 
     body.querySelectorAll('.plan').forEach(c => c.addEventListener('click', (e) => { if (e.target.closest('button')) return; (c.classList.contains('vip') ? $('#pl-vip') : $('#pl-free')).click(); }));
   }
   function checkout() {
-    body.innerHTML = `<h2>Finalizar VIP</h2><p class="hint">Falta pouco pra entrar com tudo liberado.</p>${checkoutHTML()}`;
-    $('#px-free').onclick = () => { draft.plan = 'free'; finish(); }; $('#px-back').onclick = () => plano();
+    body.innerHTML = `<h2>Finalizar VIP</h2><p class="hint">Falta pouco pra entrar com tudo liberado.</p><div id="pxroot"></div>`;
+    mountCheckout($('#pxroot'), { handle: draft.handle, toast, freeLabel: 'Entrar grátis por enquanto',
+      onFree: () => { draft.plan = 'free'; finish(); }, onBack: () => plano(),
+      onApproved: ({ token, pid }) => { draft.plan = 'vip'; draft.vipToken = token; draft.vipPid = pid; draft.vipHandle = draft.handle; toast('Pagamento aprovado! Bem-vindo ao VIP!', 4500); carro(); } });
   }
   function carro() {
     subGo('car', () => {
