@@ -4,7 +4,7 @@ P = lambda *a: os.path.join(root, *a)
 def font(fam, f, w):
     return "@font-face{font-family:'%s';src:url(data:font/woff2;base64,%s) format('woff2');font-weight:%s;font-style:normal;font-display:swap}" % (fam, base64.b64encode(open(P('src/fonts/' + f), 'rb').read()).decode(), w)
 fonts = font('Lilita One', 'lilita.woff2', 400) + ''.join(font('Nunito', 'nunito-%d.woff2' % w, w) for w in (400, 600, 800, 900))
-css = fonts + ''.join(open(P('src/parts/' + f)).read() for f in ['base.css', 'landing.css', 'signup.css', 'game3.css', 'skin.css', 'skin_landing.css'])
+css = fonts + ''.join(open(P('src/parts/' + f)).read() for f in ['base.css', 'landing.css', 'signup.css', 'game3.css', 'skin.css', 'skin_landing.css', 'vip_chat.css'])
 head = '''<!doctype html>
 <html lang="pt-BR">
 <head>

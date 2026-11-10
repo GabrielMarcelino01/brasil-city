@@ -98,6 +98,9 @@ export const OUTFITS = {
   corretor: { shirt: '#334155', overlay: 'suit', tie: '#16a34a', pants: '#334155' },
   juiz: { shirt: '#111827', overlay: 'suit', tie: '#111827', pants: '#111827' },
   vereador: { shirt: '#14532d', overlay: 'suit', tie: '#facc15', pants: '#14532d' },
+  // skins lendárias (VIP) — designs originais
+  lend_heroi: { shirt: '#1d8a39', overlay: 'herobr', pants: '#1d8a39', shoes: '#ffc425', cape: true, capeColor: '#ffc425', mask: '#1e5fbf' },
+  lend_piloto: { shirt: '#f8fafc', overlay: 'race', pants: '#f8fafc', shoes: '#1b2340', hat: 'race', hatColor: '#2f80ed' },
 };
 export function torsoTex(shirt, prof) {
   const o = OUTFITS[prof] || {}; const base = o.shirt || shirt;
@@ -118,6 +121,8 @@ export function torsoTex(shirt, prof) {
       case 'coat': F('#f8fafc', 0, 0, 6, 16); F('#f8fafc', 10, 0, 6, 16); F('#f8fafc', 16, 0, 16, 16); F('#374151', 5, 2, 1, 6); F('#374151', 9, 2, 1, 6); F('#9ca3af', 6, 7, 4, 1); break;
       case 'jersey': F('#16a34a', 0, 0, 32, 1); F('#16a34a', 6, 0, 4, 2); F('#16a34a', 4, 4, 2, 2); F('#1d4ed8', 21, 4, 2, 8); F('#1d4ed8', 24, 4, 4, 1); F('#1d4ed8', 27, 4, 1, 8); F('#1d4ed8', 24, 11, 4, 1); F('#1d4ed8', 24, 4, 1, 8); break;
       case 'sash': F('#f8fafc', 6, 0, 4, 4); for (let i = 0; i < 16; i++) { F('#16a34a', i, 15 - i, 2, 2); F('#facc15', i, 14 - i, 1, 1); } break;
+      case 'herobr': F('#ffc425', 0, 12, 32, 2); F('#e8960c', 7, 12, 2, 2); F('#ffc425', 7, 2, 2, 1); F('#ffc425', 6, 3, 4, 1); F('#ffc425', 5, 4, 6, 1); F('#ffc425', 4, 5, 8, 2); F('#ffc425', 5, 7, 6, 1); F('#ffc425', 6, 8, 4, 1); F('#ffc425', 7, 9, 2, 1); F('#1e5fbf', 6, 5, 4, 2); F('#1e5fbf', 7, 4, 2, 4); F('#ffffff', 6, 5, 4, 1); F('#1d8a39', 16, 0, 16, 16); F('#156b2c', 16, 0, 16, 2); break;
+      case 'race': F('#2f80ed', 0, 0, 3, 16); F('#2f80ed', 13, 0, 3, 16); F('#ffc425', 3, 0, 1, 16); F('#ffc425', 12, 0, 1, 16); F('#1b2340', 6, 0, 4, 2); F('#ec4b47', 5, 5, 6, 4); F('#ffffff', 7, 6, 2, 2); F('#2f80ed', 16, 0, 3, 16); F('#2f80ed', 29, 0, 3, 16); F('#ffc425', 19, 0, 1, 16); F('#ffc425', 28, 0, 1, 16); F('#1b2340', 20, 4, 8, 3); break;
       case 'hero': F('#dc2626', 0, 13, 32, 3); F('#facc15', 5, 3, 6, 6); F('#dc2626', 6, 4, 4, 4); F('#facc15', 7, 5, 2, 2); break;
     }
   });

@@ -72,6 +72,20 @@ export function buildLot(info, r) {
   const g = B.build(); g.userData.footprint = null; return g;
 }
 
+// terreno VIP: área maior (200 m²) com cerca dourada, gramado e canteiros
+function vipYard() {
+  const B = new Builder(), S2 = 6.3;
+  B.box('grass', S2 * 2, 0.05, S2 * 2, 0, 0.03, 0, { tile: 2, ao: false, c: '#c9f0b4' });
+  for (let i = -S2; i <= S2 + 0.01; i += 1.05) {
+    for (const [x, z] of [[i, -S2], [-S2, i], [S2, i], [i, S2]]) { if (z === S2 && Math.abs(x) < 1.6) continue; B.box('white', 0.18, 0.8, 0.18, x, 0.4, z, { c: '#ffffff' }); }
+  }
+  for (const [w, d, x, z] of [[S2 * 2, 0.12, 0, -S2], [0.12, S2 * 2, -S2, 0], [0.12, S2 * 2, S2, 0], [S2 - 1.6, 0.12, -(S2 + 1.6) / 2, S2], [S2 - 1.6, 0.12, (S2 + 1.6) / 2, S2]]) { B.box('gold', w, 0.12, d, x, 0.82, z); B.box('gold', w, 0.1, d, x, 0.45, z); }
+  for (const [x, z] of [[-S2, -S2], [S2, -S2], [-S2, S2], [S2, S2], [-1.6, S2], [1.6, S2]]) { B.box('gold', 0.42, 1.2, 0.42, x, 0.6, z); B.box('gold', 0.55, 0.16, 0.55, x, 1.28, z); }
+  for (const sx of [-1, 1]) { B.box('leaves', 2.2, 0.5, 0.9, sx * 4.6, 0.3, -5.3, { c: '#4f9a3a' }); for (let k = 0; k < 4; k++) B.box('white', 0.25, 0.25, 0.25, sx * (3.8 + k * 0.5), 0.65, -5.3, { c: ['#ffc425', '#ec4b47', '#2f80ed', '#ffffff'][k], ao: false }); }
+  B.box('stone', 2.4, 0.06, 3, 0, 0.06, 4.6, { c: '#f1efe9' });
+  return B.build(false, true);
+}
+
 function buildPalace(B, cx, cz, flags) {
   const y0 = LAWN_Y; B.at(cx, y0, cz, 0);
   B.box('stone', 25, 0.1, 25, 0, 0.05, 0, { tile: 2, ao: false, c: '#f1efe9' });
@@ -239,12 +253,13 @@ export class World {
     if (this.lotGroups[idx]) { this.scene.remove(this.lotGroups[idx]); }
     if (this.lotLabels[idx]) { this.scene.remove(this.lotLabels[idx]); this.labels = this.labels.filter(l => l.s !== this.lotLabels[idx]); }
     const g = buildLot(info, rng('lot' + idx + (info?.type || ''))); g.position.set(lot.x, LAWN_Y - 0.03, lot.z); g.rotation.y = lot.rot; this.scene.add(g); this.lotGroups[idx] = g;
+    if (info?.vip) { const y = vipYard(); y.position.y = -0.02; g.add(y); g.userData.vipYard = true; }
     g.traverse(m => { if (m.isMesh) m.castShadow = this.quality === 'alta'; });
     const fp = g.userData.footprint; delete this.lotObs[idx];
     if (fp) { const off = lot.rot === 0 ? -1 : 1; this.lotObs[idx] = { minX: lot.x - fp[0] / 2, maxX: lot.x + fp[0] / 2, minZ: lot.z - fp[1] / 2 + off * 0.5, maxZ: lot.z + fp[1] / 2 + off * 0.5 }; }
     const st = info?.stage || 0, tall = info?.type === 'mansao' ? 13.5 : info?.type === 'sobrado' || info?.type === 'casa_piscina' ? 11 : 8;
     let lb;
-    if (info?.me) lb = makeLabel(st >= 4 ? '⭐ SUA CASA' : `⭐ SEU TERRENO • ${['', 'Alicerce', 'Paredes', 'Telhado'][st] || 'Vazio'}`, { bg: '#ffc425', fg: '#1b2340', scale: 1.15 });
+    if (info?.me) lb = makeLabel((st >= 4 ? '⭐ SUA CASA' : `⭐ SEU TERRENO • ${['', 'Alicerce', 'Paredes', 'Telhado'][st] || 'Vazio'}`) + (info.m2 ? ` • ${info.m2} m²` : ''), { bg: '#ffc425', fg: '#1b2340', scale: 1.15, vip: !!info.vip });
     else if (info?.owner) lb = makeLabel(`🏠 @${info.owner}`, { bg: '#fff7e6', fg: '#1b2340', scale: 0.75 });
     else lb = makeLabel('🪧 Terreno livre', { bg: '#a7693e', fg: '#fff', scale: 0.7 });
     lb.position.set(lot.x, st >= 4 ? tall : st >= 2 ? 6 : 3, lot.z); this.scene.add(lb); this.lotLabels[idx] = lb; this.labels.push({ s: lb, d: info?.me ? 999 : 30 });
@@ -329,7 +344,7 @@ export class World {
   setPlayer(look, name) {
     if (this.player) this.scene.remove(this.player);
     this.player = buildAvatar(look); const p = this.playerPos || this.spawn || new THREE.Vector3(); this.player.position.copy(p); this.player.position.y = GY; this.scene.add(this.player);
-    const lb = makeLabel((look.mayor ? '👑 ' : '') + '@' + name, { bg: look.mayor ? '#2fb14b' : '#ffc425', fg: look.mayor ? '#fff' : '#1b2340', scale: 0.65 }); lb.position.y = 3.4; this.player.add(lb); this.playerLabel = lb;
+    const lb = makeLabel((look.mayor ? '👑 ' : '') + '@' + name, { bg: look.mayor ? '#2fb14b' : '#ffc425', fg: look.mayor ? '#fff' : '#1b2340', scale: 0.65, vip: !!look.vip }); lb.position.y = 3.4; this.player.add(lb); this.playerLabel = lb;
     this.mode = 'follow';
     if (this.driving && this.vehicle) this.player.visible = !!this.vehicle.userData.bike;
   }
@@ -346,7 +361,7 @@ export class World {
     return this.driving;
   }
   spawnNPCs(n, names) {
-    const r = this.r; const profs = Object.keys(OUTFITS).filter(p => p !== 'prefeito');
+    const r = this.r; const profs = Object.keys(OUTFITS).filter(p => p !== 'prefeito' && !p.startsWith('lend_'));
     const shirts = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899', '#f8fafc', '#111827'];
     const skins = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#a0522d', '#6b3e26'], hairs = ['#1b120c', '#2b1a10', '#5a3825', '#a0522d', '#e6c27a', '#111111'];
     for (let k = 0; k < n; k++) {

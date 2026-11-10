@@ -1,8 +1,11 @@
 import { World, rng } from './world.js';
 import { SIDES, UF_NOME, LEVEL_XP, MAX_LEVEL, PROFISSOES, PROF_PREFEITO, BUILD_STAGES, LOJA, NEGOCIOS, OBRAS_CIDADE, STAGES, MISSOES, LOGIN_REWARDS, CONQUISTAS, NOMES, SUFIXOS, GAME_NAME, CAPITAIS } from './data.js';
-import { MAYOR_HANDLE, MAYOR_NAME, MAYOR_DEFAULT } from './config.js';
+import { MAYOR_HANDLE, MAYOR_NAME, MAYOR_DEFAULT, PLANS } from './config.js';
+import { grantVip, isVip, ensurePlan, lotM2, VIP_CARS, VIP_SKINS } from './vip.js';
+import { plansHTML, checkoutHTML, carPickerHTML, skinPickerHTML } from './vipui.js';
+import { initChat } from './chat/chat.js';
 import { ENGINES, MG_NAMES } from './minigames.js';
-import { startIconObserver, stripEmoji } from './icons.js';
+import { startIconObserver, stripEmoji, ico } from './icons.js';
 import { initLanding, hideLanding, showLandingAgain, startSignup, landingTotals } from './landing.js';
 
 const SAVE_KEY = 'brasilcity_save_v3', SET_KEY = 'brasilcity_settings_v1';
@@ -13,6 +16,13 @@ const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt
 const ENERGY_COST = 10, ENERGY_REGEN_S = 12, TRASH_COST = 3, TREE_COST = 60, PAVE_COST = 250;
 const TOTAL_LOTS = 128;
 const params = new URLSearchParams(location.search);
+const VIP_TEST = params.get('vip') === '1'; // libera o VIP sem pagamento (teste/demonstração)
+// itens exclusivos do VIP entram na loja (carros e skins lendárias)
+for (const c of VIP_CARS) LOJA.veiculos.push({ id: c.id, nome: c.nome, icon: c.icon, desc: c.desc, vel: c.vel, vip: true });
+for (const k of VIP_SKINS) LOJA.roupas.push({ id: k.id, nome: k.nome, icon: k.icon, desc: k.tipo, tipo: 'skin', vip: true });
+let chat = null;
+const vipSeal = () => `<span class="vipseal" title="VIP">${ico('vip')}</span>`;
+const igLink = (h) => `<a class="iglink" href="https://instagram.com/${encodeURIComponent(h)}" target="_blank" rel="noopener noreferrer">@${esc(h)}</a>`;
 
 let S = null, world = null;
 const defaultQ = (matchMedia('(pointer:coarse)').matches && (navigator.hardwareConcurrency || 4) <= 4) ? 'baixa' : 'alta';
@@ -56,7 +66,7 @@ function npcLots() {
   for (const idx of cand) { if (k >= n) break; if (S.lote && S.lote.idx === idx) continue; const t0 = Math.max(0, k - 2) * 1.5; out[idx] = { owner: names[k], stage: Math.max(1, Math.min(4, 1 + Math.floor((h - t0) / 1))), type: ['casa_simples', 'casa_reformada', 'sobrado', 'casa_simples'][Math.floor(r() * 4)] }; k++; }
   return out;
 }
-function myLotInfo() { return S.lote ? { stage: S.lote.stage, type: S.casa === 'p_mansao_dourada' ? 'mansao' : S.casa, golden: S.casa === 'p_mansao_dourada', me: true, owner: S.handle } : null; }
+function myLotInfo() { return S.lote ? { stage: S.lote.stage, type: S.casa === 'p_mansao_dourada' ? 'mansao' : S.casa, golden: S.casa === 'p_mansao_dourada', me: true, owner: S.handle, vip: isVip(S), m2: lotM2(S) } : null; }
 function cityBreakdown() {
   const c = S.city, npc = npcLots(); let houses = 0, partial = 0;
   for (const l of Object.values(npc)) { if (l.stage >= 4) houses++; else partial += l.stage; }
@@ -80,10 +90,12 @@ function createPlayer(d) {
     numero: String(1 + Math.floor(r() * 99998)).padStart(5, '0'), criadoEm: Date.now(), prof: mayor ? 'prefeito' : d.prof, xp: 0, dinheiro: 200,
     energia: 100, energiaTs: Date.now(), casa: 'casa_simples', veiculo: null, roupa: 'camisa_verde', chapeu: null, inventario: ['casa_simples', 'camisa_verde'],
     negocios: {}, lote: null, city: newCity(), stats: { totalWorks: 0, perfeitos: 0, reputacao: 0, ganhos: 0, trash: 0, trees: 0, paved: 0, builds: 0, obras: 0 },
-    passivaTs: Date.now(), missions: null, login: { last: null, streak: 0, claimed: null }, conq: [], lvSeen: 1, tut: 0 };
+    passivaTs: Date.now(), missions: null, login: { last: null, streak: 0, claimed: null }, conq: [], lvSeen: 1, tut: 0, plan: 'free', skin: null };
+  if (mayor) grantVip(S, { source: 'prefeito' });
+  if (d.plan === 'vip') { grantVip(S, { source: VIP_TEST ? 'teste' : 'pix' }); if (d.vipCar) { S.veiculo = d.vipCar; S.vip.car = d.vipCar; } if (d.vipSkin) { S.skin = d.vipSkin; S.vip.skin = d.vipSkin; } }
   save();
 }
-function migrate(s) { s.stats = Object.assign({ totalWorks: 0, perfeitos: 0, reputacao: 0, ganhos: 0, trash: 0, trees: 0, paved: 0, builds: 0, obras: 0 }, s.stats); s.city ||= newCity(); s.city.decretos ||= {}; s.conq ||= []; s.login ||= { last: null, streak: 0 }; s.negocios ||= {}; s.lvSeen ||= levelOf(s.xp); return s; }
+function migrate(s) { s.stats = Object.assign({ totalWorks: 0, perfeitos: 0, reputacao: 0, ganhos: 0, trash: 0, trees: 0, paved: 0, builds: 0, obras: 0 }, s.stats); s.city ||= newCity(); s.city.decretos ||= {}; s.conq ||= []; s.login ||= { last: null, streak: 0 }; s.negocios ||= {}; s.lvSeen ||= levelOf(s.xp); ensurePlan(s); if (s.mayor && !isVip(s)) grantVip(s, { source: 'prefeito' }); return s; }
 
 // ---------- mundo 3D ----------
 function ensureWorld() {
@@ -102,19 +114,29 @@ function buildWorld(keepPos) {
 }
 function vehicleModel() { return { p_esportivo: 'esportivo', p_carro_neon: 'neon' }[S.veiculo] || S.veiculo; }
 function refreshAvatar() {
-  const roupa = LOJA.roupas.find(x => x.id === S.roupa); const hat = LOJA.roupas.find(x => x.id === S.chapeu);
-  world.setPlayer({ shirt: S.mayor ? '#15803d' : (roupa?.cor || '#16a34a'), hat: hat?.modelo || null, cape: false, skin: S.pele || '#c68642', prof: S.prof, hairCol: '#2b1a10', mayor: S.mayor }, S.handle);
+  const roupa = LOJA.roupas.find(x => x.id === S.roupa); const hat = LOJA.roupas.find(x => x.id === S.chapeu); const skin = isVip(S) ? S.skin : null;
+  world.setPlayer({ shirt: S.mayor ? '#15803d' : (roupa?.cor || '#16a34a'), hat: skin ? null : hat?.modelo || null, cape: false, skin: S.pele || '#c68642', prof: skin || S.prof, hairCol: '#2b1a10', mayor: S.mayor, vip: isVip(S) }, S.handle);
 }
 
 // ---------- entrada no jogo ----------
 function enterGame() {
   hideLanding(); $('#signup').hidden = true; ensureWorld(); document.body.classList.add('ingame');
   ensureMissions(); tickEconomy(true); S.city.stageSeen = Math.max(S.city.stageSeen || 0, stageOf(cityScore()));
-  buildWorld(false); ui.innerHTML = ''; $('#hud').hidden = false; $('#joy').hidden = false; renderHUD(); startCtxLoop();
+  if (VIP_TEST && !isVip(S)) { grantVip(S, { source: 'teste' }); save(); }
+  buildWorld(false); ui.innerHTML = ''; $('#hud').hidden = false; $('#joy').hidden = false; startChat(); renderHUD(); startCtxLoop();
   dailyLogin(); checkAch(true);
+  if (isVip(S) && !S.mayor && !S.vip.car) enqueue(() => showCarPicker(true));
   if (!S.tut) { S.tut = 1; save(); enqueue(() => S.mayor ? toast(`👑 Bem-vindo, Prefeito! Abra o 🏛️ Gabinete pra lançar obras. ${S.cidade} ainda é uma Vila.`, 7000) : toast(`👋 ${S.cidade} ainda é uma Vila! Esse 🪧 terreno na sua frente está livre: toque em REIVINDICAR.`, 7000)); }
 }
-function backToLanding() { closeModal(true); document.body.classList.remove('ingame'); $('#hud').hidden = true; $('#joy').hidden = true; if (world) world.mode = 'orbit'; showLandingAgain(); }
+function startChat() {
+  chat?.destroy();
+  chat = initChat({ getPlayer: () => S, toast, bots: params.get('bots') !== '0',
+    getCtx: () => ({ cidade: S.cidade, obra: obraDef()?.nome || 'da praça', lado: SIDES[S.side].nome }),
+    residentCount: () => residentsSim(), botNames: () => (world?.npcs?.length ? world.npcs.map(n => n.name) : genNames(20, seedOf(S.cidade + 'npc'))),
+    onUpsell: (from) => showPlans(from) });
+  window.__chat = chat;
+}
+function backToLanding() { chat?.close(); closeModal(true); document.body.classList.remove('ingame'); $('#hud').hidden = true; $('#joy').hidden = true; if (world) world.mode = 'orbit'; showLandingAgain(); }
 
 // ---------- economia ----------
 function wageMult() { return 1 + 0.04 * S.city.obras.length; }
@@ -157,15 +179,16 @@ function renderHUD() {
   const score = cityScore(), st = stageOf(score), nx = STAGES[st + 1]; const cpct = nx ? ((score - STAGES[st].min) / (nx.min - STAGES[st].min)) * 100 : 100;
   const rank = cityRankPos(score);
   $('#hud-top').innerHTML = `<div class="hrow">
-    <div class="pill me ${S.side}" id="h-me"><div class="av">${p.emoji}<em>${lv}</em></div><div class="pinfo"><b>${S.mayor ? '👑 ' : ''}@${esc(S.handle)}</b>
+    <div class="pill me ${S.side}" id="h-me"><div class="av">${p.emoji}<em>${lv}</em></div><div class="pinfo"><b>${S.mayor ? '👑 ' : ''}@${esc(S.handle)}${isVip(S) ? vipSeal() : ''}</b>
       <div class="xpbar" id="h-xp"><i style="width:${lastXpPct ?? pct}%"></i><span>${lv >= MAX_LEVEL ? 'MÁX' : `${fmtN(S.xp)}/${fmtN(nxt)}`}</span></div><small>${p.nome}</small></div></div>
     <div class="right"><div class="pill cur money" id="h-money"><span class="ci">🪙</span><b>${fmtN(S.dinheiro)}</b></div><div class="pill cur energy"><span class="ci">⚡</span><b>${Math.floor(en)}<small>/${em}</small></b><div class="enbar"><i style="width:${en / em * 100}%"></i></div></div></div></div>
     <div class="citybar" id="h-city"><span class="ce">${STAGES[st].emoji}</span><div class="cb"><b>${esc(S.cidade)} <em>${STAGES[st].nome}</em></b><div class="cbar"><i style="width:${lastCityPct ?? cpct}%"></i><span>${nx ? `${fmtN(score)} / ${fmtN(nx.min)}` : 'TOPO'}</span></div><small>${nx ? `próximo: ${nx.emoji} ${nx.nome}` : 'Topo do ranking de evolução!'}</small></div><span class="rk">🏆<b>#${rank}</b></span></div>
-    <div class="sidecol" id="sidecol"></div>`;
+    <div class="sidecol" id="sidecol"></div><div class="leftcol" id="leftcol"><button class="act chatb" id="b-chat"><span class="ai">${ico('chat')}</span><span class="al">Chat</span></button>${isVip(S) ? '' : `<button class="act vipb" id="b-vip"><span class="ai">${ico('vip')}</span><span class="al">Seja VIP</span></button>`}</div>`;
   requestAnimationFrame(() => { const xi = $('#h-xp i'); if (xi) xi.style.width = pct + '%'; const ci = $('#h-city .cbar i'); if (ci) ci.style.width = cpct + '%'; });
   if (lastXpPct !== null && Math.abs(lastXpPct - pct) > 0.5) $('#h-xp')?.classList.add('flash');
   lastXpPct = pct; lastCityPct = cpct;
   $('#h-me').onclick = () => showCarteira(); $('#h-city').onclick = () => showRanking();
+  $('#b-chat').onclick = () => chat?.toggle(); const bv = $('#b-vip'); if (bv) bv.onclick = () => showPlans('hud'); chat?.syncButton();
   const hasCar = !!S.veiculo, mis = (S.missions?.list || []).filter(m => m.p >= MISSOES.find(x => x.id === m.id).meta && !m.claimed).length + (S.login.claimed !== dayKey() ? 1 : 0);
   const acts = [
     ['b-car', '📈', 'Carreira'], ['b-shop', '🛍️', 'Loja'], ['b-mis', '📋', 'Missões', mis], ['b-rank', '🏆', 'Ranking'], ['b-side', S.side === 'norte' ? '🤝' : '🏪', S.side === 'norte' ? 'Mutirão' : 'Negócios'],
@@ -197,7 +220,7 @@ function ctxActions() {
   if (n.lot && n.lot.d < 9.6) {
     const mine = S.lote?.idx === n.lot.idx, npc = npcLots()[n.lot.idx];
     if (mine && S.lote.stage < 4) { const b = BUILD_STAGES[S.lote.stage]; a.push({ id: 'build', cls: 'build', t: `${b.emoji} Construir ${b.nome}`, s: `${fmt(b.preco)} • +${b.xp} XP` }); }
-    else if (!mine && !npc && !S.lote && !S.mayor) a.push({ id: 'claim', idx: n.lot.idx, cls: 'claim', t: '🪧 Reivindicar terreno', s: 'grátis • vira seu' });
+    else if (!mine && !npc && !S.lote && !S.mayor) a.push({ id: 'claim', idx: n.lot.idx, cls: 'claim', t: '🪧 Reivindicar terreno', s: `grátis • ${lotM2(S)} m²${isVip(S) ? ' VIP' : ''}` });
   }
   if (a.length < 2 && n.canPlant) a.push({ id: 'plant', cls: 'plant', t: '🌳 Plantar árvore', s: `${fmt(TREE_COST)} • +15 XP` });
   if (a.length < 2 && n.block && !n.special && !world.isPaved(n.block)) a.push({ id: 'pave', key: n.block, cls: 'pave', t: '🧱 Pavimentar calçada', s: `${fmt(PAVE_COST)} • +20 XP` });
@@ -212,7 +235,7 @@ function updateCtx() {
 function doCtx(a, el) {
   const p = world.playerPos || world.player.position;
   if (a.id === 'trash') { const en = energyNow(); if (en < TRASH_COST) return toast('⚡ Sem energia pra limpar agora'); setEnergy(en - TRASH_COST); world.clearTrash(a.k); S.city.cleaned.push(a.k); S.stats.trash++; sfx('pop'); gain(S.prof === 'gari' ? 10 : 5, 8, el); ev('trash'); }
-  else if (a.id === 'claim') { S.lote = { idx: a.idx, stage: 0, ts: Date.now() }; world.setLot(a.idx, myLotInfo(), true); sfx('build'); confetti(); toast('🪧 Terreno é seu! Agora construa o 🪨 Alicerce (R$ 100).', 5000); gain(0, 10, el); }
+  else if (a.id === 'claim') { S.lote = { idx: a.idx, stage: 0, ts: Date.now() }; world.setLot(a.idx, myLotInfo(), true); sfx('build'); confetti(); toast(`🪧 Terreno de ${lotM2(S)} m² é seu! Agora construa o 🪨 Alicerce (R$ 100).`, 5000); gain(0, 10, el); }
   else if (a.id === 'build') {
     const b = BUILD_STAGES[S.lote.stage]; if (S.dinheiro < b.preco) return toast(`💸 Faltam ${fmt(b.preco - S.dinheiro)}. Bora TRABALHAR! 💪`); S.dinheiro -= b.preco; S.lote.stage++; S.stats.builds++; world.setLot(S.lote.idx, myLotInfo(), true); sfx('build'); gain(0, b.xp, el); ev('build');
     if (S.lote.stage >= 4) { confetti(); world.setVehicle(vehicleModel(), homeFront()); enqueue(() => showStagePop('🏠', 'Sua casa está pronta!', 'A 🚗 garagem foi liberada na Loja. E agora você pode fazer reformas: sobrado, piscina, mansão…')); }
@@ -347,8 +370,9 @@ function showShop(tab = 'veiculos') {
   const tabs = { veiculos: '🚗 Veículos', casas: '🏠 Casas', roupas: '👕 Roupas', premium: '💎 Premium' };
   let items = '', note = '';
   for (const it of LOJA[tab]) {
-    const owned = S.inventario.includes(it.id); const equipped = S.casa === it.id || S.veiculo === it.id || S.roupa === it.id || S.chapeu === it.id;
-    const icon = it.emoji || (it.tipo === 'camisa' ? `<i class="sw" style="background:${it.cor}"></i>` : { bone: '🧢', palha: '👒', coroa: '👑' }[it.modelo]);
+    const owned = S.inventario.includes(it.id); const equipped = S.casa === it.id || S.veiculo === it.id || (S.roupa === it.id && !(isVip(S) && S.skin)) || S.chapeu === it.id;
+    const icon = it.icon ? ico(it.icon) : it.emoji || (it.tipo === 'camisa' ? `<i class="sw" style="background:${it.cor}"></i>` : { bone: '🧢', palha: '👒', coroa: '👑' }[it.modelo]);
+    if (it.vip) { const on = S.veiculo === it.id || S.skin === it.id; items += `<div class="item vipi"><span class="vtag">${ico('vip')}VIP</span><div class="ii">${icon}</div><b>${it.nome}</b><small>${it.desc}</small>${isVip(S) ? (on ? `<button class="btn ok" disabled>✔ Usando</button>` : `<button class="btn ghost" data-eq="${it.id}">Usar</button>`) : `<button class="btn gold" data-vip="${it.id}">Seja VIP</button>`}</div>`; continue; }
     const locked = (tab === 'veiculos' && it.casa && !hasHome()) || (tab === 'casas' && it.preco > 0 && (S.mayor || (S.lote?.stage || 0) < 4));
     let btn;
     if (it.premium || tab === 'premium') btn = `<button class="btn pix" data-pix="${it.id}">Pix R$ ${it.pix.toFixed(2).replace('.', ',')}</button><small class="soon">em breve</small>`;
@@ -367,12 +391,13 @@ function showShop(tab = 'veiculos') {
   ui.querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { equip(tab, b.dataset.eq); showShop(tab); });
   ui.querySelectorAll('[data-lock]').forEach(b => b.onclick = () => toast(tab === 'veiculos' ? '🏠 Termine as 4 etapas da sua casa pra liberar a garagem.' : '🏠 Termine sua casa primeiro.'));
   ui.querySelectorAll('[data-pix]').forEach(b => b.onclick = () => toast('💎 Pagamento via Pix chega em breve! Nesta versão de teste nada é cobrado.', 4000));
+  ui.querySelectorAll('[data-vip]').forEach(b => b.onclick = () => showPlans('loja'));
 }
 function buy(tab, id, el) { const it = LOJA[tab].find(x => x.id === id); if (S.dinheiro < it.preco) return toast(`Faltam ${fmt(it.preco - S.dinheiro)}. Bora trabalhar! 💪`); S.dinheiro -= it.preco; S.inventario.push(id); equip(tab, id); confetti(); sfx('coin'); toast(`🎉 Você comprou: ${it.nome}!`); showShop(tab); }
 function equip(tab, id) {
   if (tab === 'casas') { S.casa = id; if (S.lote) world.setLot(S.lote.idx, myLotInfo(), true); }
   if (tab === 'veiculos') { if (world.driving) world.toggleDrive(); S.veiculo = id; world.setVehicle(vehicleModel(), homeFront()); world.vehicleSpeed = LOJA.veiculos.find(v => v.id === id).vel || 2.6; }
-  if (tab === 'roupas') { const it = LOJA.roupas.find(x => x.id === id); if (it.tipo === 'camisa') S.roupa = id; else S.chapeu = S.chapeu === id ? null : id; refreshAvatar(); }
+  if (tab === 'roupas') { const it = LOJA.roupas.find(x => x.id === id); if (it.tipo === 'skin') S.skin = id; else if (it.tipo === 'camisa') { S.roupa = id; S.skin = null; } else { S.chapeu = S.chapeu === id ? null : id; S.skin = null; } refreshAvatar(); }
   save(); renderHUD();
 }
 
@@ -439,20 +464,49 @@ function showRanking(tab = 'cidades') {
     body = `<div class="vshead"><span class="n">🌴 NORTE</span><span class="s">SUL 🏙️</span></div>${row('Moradores', t.moradores * t.norte * 2 / 2, t.moradores * t.sul)}${row('Cidades evoluídas', t.cidades * t.norte, t.cidades * t.sul)}${row('Obras entregues', t.obras * (t.norte + 0.03), t.obras * (t.sul - 0.03))}`;
   } else {
     const r = rng(Math.floor(Date.now() / 3.6e6)); const names = genNames(9, 7);
-    const rich = names.map((n, i) => ({ n, v: Math.round(90000 / (i + 1) * (0.8 + r() * 0.4)), s: i % 3 ? 'sul' : 'norte' })); rich.push({ n: S.handle, v: S.dinheiro, s: S.side, me: true }); rich.sort((a, c) => c.v - a.v);
-    body = `<ol class="rank">${(rich.slice(0, 10).some(x => x.me) ? rich.slice(0, 10) : [...rich.slice(0, 9), rich.find(x => x.me)]).map(x => `<li class="${x.me ? 'me' : ''}"><span>${x.s === 'norte' ? '🌴' : '🏙️'} @${esc(x.n)}</span><b>${fmt(x.v)}</b></li>`).join('')}</ol>`;
+    const rich = names.map((n, i) => ({ n, v: Math.round(90000 / (i + 1) * (0.8 + r() * 0.4)), s: i % 3 ? 'sul' : 'norte', vip: i % 4 === 0 })); rich.push({ n: S.handle, v: S.dinheiro, s: S.side, me: true, vip: isVip(S) }); rich.sort((a, c) => c.v - a.v);
+    body = `<ol class="rank">${(rich.slice(0, 10).some(x => x.me) ? rich.slice(0, 10) : [...rich.slice(0, 9), rich.find(x => x.me)]).map(x => `<li class="${x.me ? 'me' : ''}"><span>${x.s === 'norte' ? '🌴' : '🏙️'} ${x.me && x.vip ? igLink(x.n) : '@' + esc(x.n)}${x.vip ? vipSeal() : ''}</span><b>${fmt(x.v)}</b></li>`).join('')}</ol>${isVip(S) ? '' : `<p class="small vipup">${ico('vip')} VIPs aparecem com selo dourado e @ clicável. <button class="btn-mini gold" id="rk-vip">Seja VIP</button></p>`}`;
   }
   modal(`<h2>🏆 Ranking</h2>${tabs}${body}<p class="small" style="color:#64748b">Outras cidades e jogadores são simulados nesta versão de teste.</p><button class="btn primary" id="mok">Fechar</button>`, 'wide');
   $('#mok').onclick = () => closeModal(); ui.querySelectorAll('[data-t]').forEach(bt => bt.onclick = () => showRanking(bt.dataset.t));
+  const rv = $('#rk-vip'); if (rv) rv.onclick = () => showPlans('ranking');
+}
+
+// ---------- VIP no jogo ----------
+function showPlans(from = 'hud') {
+  if (isVip(S)) return showCarPicker();
+  modal(`<h2>${ico('vip')} Seja VIP</h2><p class="sub" style="text-align:center">${from === 'chat' ? 'No plano grátis é 1 mensagem por minuto. VIP manda sem limite.' : 'Tudo liberado de uma vez, num pagamento só.'}</p>${plansHTML({ test: VIP_TEST, from: 'game' })}`, 'wide vipm');
+  $('#pl-free').onclick = () => closeModal();
+  $('#pl-vip').onclick = () => (VIP_TEST ? unlockVip('teste') : showVipCheckout());
+}
+function showVipCheckout() {
+  modal(`<h2>Finalizar VIP</h2>${checkoutHTML()}`, 'wide vipm');
+  $('#px-free').textContent = 'Continuar grátis por enquanto'; $('#px-free').onclick = () => closeModal(); $('#px-back').onclick = () => showPlans('checkout');
+}
+/** Efeitos no jogo depois de grantVip (o webhook do Pix chama isto via window.BrasilCity.grantVip). */
+function unlockVip(source = 'pix', txid = null) {
+  grantVip(S, { source, txid }); save(); confetti(); sfx('level');
+  refreshAvatar(); if (S.lote) world.setLot(S.lote.idx, myLotInfo(), true); renderHUD(); chat?.refresh();
+  showCarPicker(true);
+}
+function showCarPicker(first = false) {
+  modal(`<h2>${first ? 'Bem-vindo ao VIP!' : 'Seu esportivo'}</h2><p class="sub" style="text-align:center">Escolha seu carro esportivo. Dá pra trocar depois na Loja.</p>${carPickerHTML(S.veiculo)}`, 'wide vipm');
+  ui.querySelectorAll('.car3').forEach(b => b.onclick = () => { const id = b.dataset.car; if (world.driving) world.toggleDrive(); S.veiculo = id; S.vip.car = id; world.setVehicle(vehicleModel(), homeFront()); world.vehicleSpeed = LOJA.veiculos.find(v => v.id === id).vel; save(); sfx('coin'); ui.querySelectorAll('.car3').forEach(x => x.classList.toggle('sel', x === b)); setTimeout(() => showSkinPicker(first), 280); });
+}
+function showSkinPicker(first = false) {
+  modal(`<h2>Skins lendárias</h2>${skinPickerHTML(S.skin)}`, 'wide vipm');
+  ui.querySelectorAll('.skin2').forEach(b => b.onclick = () => { S.skin = b.dataset.skin; S.vip.skin = S.skin; save(); refreshAvatar(); sfx('star'); confetti(); ui.querySelectorAll('.skin2').forEach(x => x.classList.toggle('sel', x === b)); setTimeout(() => { closeModal(); if (first) toast(`Tudo pronto! Seu ${VIP_CARS.find(c => c.id === S.veiculo)?.nome || 'carro'} está na garagem e o chat está liberado sem limite.`, 5000); renderHUD(); }, 320); });
 }
 
 // ---------- carteira, ajustes, ajuda ----------
 function showCarteira() {
   const p = prof(S.prof), d = SIDES[S.side];
   modal(`<h2>🪪 Carteira de morador</h2><div class="carteira ${S.side}"><div class="ct-top"><span>🇧🇷 ${GAME_NAME}</span><span>${S.mayor ? 'PREFEITO' : 'MORADOR'}</span></div>
-    <div class="ct-body"><div class="ct-photo">${p.emoji}</div><div class="ct-info"><b>${S.mayor ? '👑 ' : ''}${esc(S.nome)}</b><span>@${esc(S.handle)}</span>
-    <div class="ct-grid"><div><small>${S.mayor ? 'Residência' : 'Casa nº'}</small>${S.mayor ? 'Palácio' : '#' + S.numero}</div><div><small>Lado</small>${d.nome}</div><div><small>Cidade</small>${esc(S.cidade)} - ${S.uf}</div><div><small>Profissão</small>${p.nome}</div><div><small>Nível</small>${levelOf(S.xp)}</div><div><small>Desde</small>${new Date(S.criadoEm).toLocaleDateString('pt-BR')}</div></div></div></div><div class="ct-bar"></div></div>
+    <div class="ct-body"><div class="ct-photo">${p.emoji}</div><div class="ct-info"><b>${S.mayor ? '👑 ' : ''}${esc(S.nome)}${isVip(S) ? vipSeal() : ''}</b><span>${isVip(S) ? igLink(S.handle) : '@' + esc(S.handle)}</span>
+    <div class="ct-grid"><div><small>${S.mayor ? 'Residência' : 'Casa nº'}</small>${S.mayor ? 'Palácio' : '#' + S.numero}</div><div><small>Lado</small>${d.nome}</div><div><small>Cidade</small>${esc(S.cidade)} - ${S.uf}</div><div><small>Profissão</small>${p.nome}</div><div><small>Nível</small>${levelOf(S.xp)}</div><div><small>Desde</small>${new Date(S.criadoEm).toLocaleDateString('pt-BR')}</div><div><small>Plano</small>${isVip(S) ? 'VIP' : 'Grátis'}</div><div><small>Terreno</small>${lotM2(S)} m²</div></div></div></div><div class="ct-bar"></div></div>
+    ${isVip(S) ? `<div class="note vipnote">${ico('at')} Seu @ é clicável no perfil e no ranking: quem tocar vai direto pro seu Instagram.</div>` : `<button class="btn gold" id="ct-vip">${ico('vip')} Seja VIP: @ clicável e selo dourado</button>`}
     <button class="btn primary" id="mok">Fechar</button><button class="btn ghost" id="share">📋 Copiar texto pra compartilhar</button>`);
+  const cv = $('#ct-vip'); if (cv) cv.onclick = () => showPlans('perfil');
   $('#mok').onclick = () => closeModal(); $('#share').onclick = () => { navigator.clipboard?.writeText(`Sou ${S.mayor ? 'prefeito' : 'morador(a) #' + S.numero} de ${S.cidade} no ${GAME_NAME}, time ${SIDES[S.side].nome}! Nível ${levelOf(S.xp)}. Bora deixar nossa cidade Nível Suíça? 🇧🇷`); toast('Texto copiado!'); };
 }
 function showSettings() {
@@ -526,8 +580,12 @@ window.__game = {
     world.cine = presets[preset]; world.mode = 'cine'; $('#hud').hidden = true; $('#joy').hidden = true;
   },
   dropQueue() { queue.length = 0; },
+  showPlans, showVipCheckout, showCarPicker, showSkinPicker, unlockVip, get chat() { return chat; },
   closeModal, flush, sfx, newDay() { S.login.last = null; S.missions = null; S.login.claimed = null; save(); },
 };
+
+// ponto de integração para o checkout real (Pix): o front chama isto quando o servidor confirmar o pagamento
+window.BrasilCity = { grantVip: (opts = {}) => { if (!S) return false; if (S.hudReady) unlockVip(opts.source || 'pix', opts.txid || null); else { grantVip(S, opts); save(); } return true; }, isVip: () => isVip(S) };
 
 // ---------- boot ----------
 startIconObserver(document.body);
@@ -542,7 +600,7 @@ if (params.get('prefeito') === '1') {
   const side = params.get('lado') || MAYOR_DEFAULT.side, uf = params.get('uf') || (side === MAYOR_DEFAULT.side ? MAYOR_DEFAULT.uf : 'CE'), cidade = params.get('cidade') || (uf === MAYOR_DEFAULT.uf ? MAYOR_DEFAULT.cidade : CAPITAIS[uf]);
   if (saved?.mayor && saved.cidade === cidade && saved.side === side) { S = migrate(saved); withLoading(enterGame); } else begin({ handle: MAYOR_HANDLE, side, uf, cidade, mayor: true });
 } else {
-  const start = (preSide) => { hideLanding(); startSignup({ preSide, toast, onDone: (d) => begin(d), onCancel: () => showLandingAgain() }); };
+  const start = (preSide) => { hideLanding(); startSignup({ preSide, toast, vipTest: VIP_TEST, onDone: (d) => begin(d), onCancel: () => showLandingAgain() }); };
   initLanding({ toast, savedHandle: saved?.handle, onStart: start, onContinue: () => { S = migrate(saved); withLoading(enterGame); } });
   if (params.get('jogar') === '1') start();
   setTimeout(bootDone, 350);

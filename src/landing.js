@@ -3,6 +3,7 @@ import { SIDES, REGIAO_UFS, UF_NOME, CAPITAIS, PROFISSOES } from './data.js';
 import { MUNICIPIOS } from './municipios.js';
 import { MAYOR_HANDLE } from './config.js';
 import { MG_NAMES } from './minigames.js';
+import { plansHTML, checkoutHTML, carPickerHTML, skinPickerHTML } from './vipui.js';
 
 const $ = (s) => document.querySelector(s);
 const fmtN = (n) => Math.floor(n).toLocaleString('pt-BR');
@@ -40,17 +41,18 @@ export function hideLanding() { const L = $('#landing'); L.hidden = true; L.quer
 export function showLandingAgain() { const L = $('#landing'); L.hidden = false; L.scrollTop = 0; L.querySelector('.phone video')?.play().catch(() => {}); }
 
 // ---------------- cadastro ----------------
-const STEPS = ['handle', 'idade', 'lado', 'estado', 'cidade', 'prof'];
-export function startSignup({ preSide, onDone, onCancel, toast }) {
-  const draft = { side: preSide || null }; let step = 0;
-  const box = $('#signup'), body = $('#su-body'); box.hidden = false;
-  $('#su-back').onclick = () => { if (step === 0) { box.hidden = true; onCancel(); } else go(step - 1); };
+const STEPS = ['handle', 'idade', 'lado', 'estado', 'cidade', 'prof', 'plano'];
+export function startSignup({ preSide, onDone, onCancel, toast, vipTest = false }) {
+  const draft = { side: preSide || null, plan: 'free' }; let step = 0, sub = null;
+  const box = $('#signup'), body = $('#su-body'); box.hidden = false; box.classList.remove('su-vip');
+  $('#su-back').onclick = () => { if (sub) { sub === 'skin' ? carro() : plano(); return; } if (step === 0) { box.hidden = true; onCancel(); } else go(step - 1); };
   const isMayor = () => draft.handle === MAYOR_HANDLE;
   function go(n) {
-    step = n; const total = isMayor() ? 5 : 6; $('#su-prog').style.width = ((n + 1) / total * 100) + '%'; $('#su-n').textContent = `${n + 1}/${total}`;
-    body.style.animation = 'none'; body.offsetHeight; body.style.animation = ''; box.scrollTop = 0;
-    ({ handle, idade, lado, estado, cidade, prof })[STEPS[n]]();
+    step = n; sub = null; const total = isMayor() ? 5 : 7; $('#su-prog').style.width = ((n + 1) / total * 100) + '%'; $('#su-n').textContent = `${n + 1}/${total}`;
+    body.style.animation = 'none'; body.offsetHeight; body.style.animation = ''; box.scrollTop = 0; box.classList.toggle('su-vip', STEPS[n] === 'plano');
+    ({ handle, idade, lado, estado, cidade, prof, plano })[STEPS[n]]();
   }
+  function subGo(name, fn) { sub = name; body.style.animation = 'none'; body.offsetHeight; body.style.animation = ''; box.scrollTop = 0; box.classList.add('su-vip'); fn(); }
   function handle() {
     body.innerHTML = `<h2>Qual é o seu @ do Instagram?</h2><p class="hint">Ele vira o nome do seu morador e aparece em cima da sua cabeça na cidade.</p>
       <div class="igin"><span>@</span><input id="su-h" maxlength="30" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="seu.usuario" value="${esc(draft.handle || '')}"></div>
@@ -100,8 +102,31 @@ export function startSignup({ preSide, onDone, onCancel, toast }) {
     const ps = PROFISSOES.filter(p => p.nivel === 1);
     body.innerHTML = `<h2>Qual vai ser seu primeiro trampo?</h2><p class="hint">Cada profissão é um minigame diferente. Depois você desbloqueia outras 21.</p>
       <div class="profs2">${ps.map(p => `<button class="prof2" data-p="${p.id}"><span class="pe">${p.emoji}</span><b>${p.nome}</b><span class="mgt">🎮 ${MG_NAMES[p.mg]}</span><small>${p.desc}</small></button>`).join('')}</div>`;
-    body.querySelectorAll('.prof2').forEach(b => b.onclick = () => { draft.prof = b.dataset.p; finish(); });
+    body.querySelectorAll('.prof2').forEach(b => b.onclick = () => { draft.prof = b.dataset.p; go(6); });
   }
-  function finish() { box.hidden = true; onDone({ ...draft }); }
+  function plano() {
+    sub = null; box.classList.add('su-vip');
+    body.innerHTML = `<h2>Escolha seu plano</h2><p class="hint">Jogue de graça pra sempre ou entre como <b>VIP</b> com tudo liberado.</p>${plansHTML({ test: vipTest })}`;
+    $('#pl-free').onclick = () => { draft.plan = 'free'; finish(); };
+    $('#pl-vip').onclick = () => { if (vipTest) { draft.plan = 'vip'; toast('VIP liberado (modo teste)!'); carro(); } else subGo('pix', checkout); };
+    body.querySelectorAll('.plan').forEach(c => c.addEventListener('click', (e) => { if (e.target.closest('button')) return; (c.classList.contains('vip') ? $('#pl-vip') : $('#pl-free')).click(); }));
+  }
+  function checkout() {
+    body.innerHTML = `<h2>Finalizar VIP</h2><p class="hint">Falta pouco pra entrar com tudo liberado.</p>${checkoutHTML()}`;
+    $('#px-free').onclick = () => { draft.plan = 'free'; finish(); }; $('#px-back').onclick = () => plano();
+  }
+  function carro() {
+    subGo('car', () => {
+      body.innerHTML = `<h2>Escolha seu carro esportivo</h2><p class="hint">Presente do VIP: ele já fica estacionado na frente da sua casa.</p>${carPickerHTML(draft.vipCar)}`;
+      body.querySelectorAll('.car3').forEach(b => b.onclick = () => { draft.vipCar = b.dataset.car; body.querySelectorAll('.car3').forEach(x => x.classList.toggle('sel', x === b)); setTimeout(skin, 260); });
+    });
+  }
+  function skin() {
+    subGo('skin', () => {
+      body.innerHTML = `<h2>Suas 2 skins lendárias</h2><p class="hint">Qual você quer usar agora?</p>${skinPickerHTML(draft.vipSkin)}`;
+      body.querySelectorAll('.skin2').forEach(b => b.onclick = () => { draft.vipSkin = b.dataset.skin; draft.plan = 'vip'; body.querySelectorAll('.skin2').forEach(x => x.classList.toggle('sel', x === b)); setTimeout(finish, 260); });
+    });
+  }
+  function finish() { box.hidden = true; box.classList.remove('su-vip'); onDone({ ...draft }); }
   go(0);
 }

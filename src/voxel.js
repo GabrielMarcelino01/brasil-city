@@ -65,11 +65,12 @@ export class Builder {
 }
 
 // ---------- labels ----------
-export function makeLabel(text, { bg = 'rgba(27,35,64,0.9)', fg = '#fff', scale = 1, border = null } = {}) {
+export function makeLabel(text, { bg = 'rgba(27,35,64,0.9)', fg = '#fff', scale = 1, border = null, vip = false } = {}) {
   text = stripEmoji(text);
   const c = document.createElement('canvas'); const ctx = c.getContext('2d');
   const fs = 42, font = `${fs}px "Lilita One", "Nunito", system-ui, sans-serif`; ctx.font = font;
-  const w = Math.ceil(ctx.measureText(text).width) + 48; c.width = w; c.height = 80;
+  const VW = vip ? 54 : 0;
+  const w = Math.ceil(ctx.measureText(text).width) + 48 + VW; c.width = w; c.height = 80;
   ctx.font = font;
   // pílula com contorno marinho + "lábio" inferior (mesmo estilo dos botões da interface)
   ctx.fillStyle = '#1b2340'; rr(ctx, 3, 9, w - 6, 66, 20); ctx.fill();
@@ -77,11 +78,20 @@ export function makeLabel(text, { bg = 'rgba(27,35,64,0.9)', fg = '#fff', scale 
   ctx.strokeStyle = border || '#1b2340'; ctx.lineWidth = 5; ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,0.28)'; rr(ctx, 14, 10, w - 28, 12, 6); ctx.fill();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  if (fg === '#fff' || fg === '#ffffff') { ctx.lineWidth = 7; ctx.strokeStyle = '#1b2340'; ctx.lineJoin = 'round'; ctx.strokeText(text, w / 2, 39); }
-  ctx.fillStyle = fg; ctx.fillText(text, w / 2, 39);
+  const tx = (w + VW) / 2;
+  if (fg === '#fff' || fg === '#ffffff') { ctx.lineWidth = 7; ctx.strokeStyle = '#1b2340'; ctx.lineJoin = 'round'; ctx.strokeText(text, tx, 39); }
+  ctx.fillStyle = fg; ctx.fillText(text, tx, 39);
+  if (vip) vipSeal(ctx, 36, 37, 22);
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: true, transparent: true, fog: false }));
   sp.scale.set((w / 80) * 0.95 * scale, 0.95 * scale, 1); sp.renderOrder = 10; return sp;
+}
+// selo dourado VIP (mesmo desenho do ícone "vip" da interface)
+export function vipSeal(ctx, cx, cy, R) {
+  ctx.save(); ctx.beginPath(); const n = 12; for (let i = 0; i < n * 2; i++) { const a = -Math.PI / 2 + i * Math.PI / n, q = i % 2 ? R * 0.83 : R; ctx.lineTo(cx + Math.cos(a) * q, cy + Math.sin(a) * q); } ctx.closePath();
+  ctx.fillStyle = '#ffc425'; ctx.fill(); ctx.lineWidth = 5; ctx.strokeStyle = '#1b2340'; ctx.lineJoin = 'round'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, R * 0.55, 0, Math.PI * 2); ctx.fillStyle = '#e8960c'; ctx.fill(); ctx.lineWidth = 3.5; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx - R * 0.26, cy + R * 0.02); ctx.lineTo(cx - R * 0.07, cy + R * 0.22); ctx.lineTo(cx + R * 0.28, cy - R * 0.2); ctx.lineWidth = 5; ctx.strokeStyle = '#fff'; ctx.lineCap = 'round'; ctx.stroke(); ctx.restore();
 }
 function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 
@@ -226,7 +236,9 @@ export function buildAvatar({ shirt = '#16a34a', skin = '#c68642', hat = null, p
   if (H === 'coroa') { const g = plainMat('#facc15', { metalness: 0.8, roughness: 0.25, emissive: '#7c4a03', emissiveIntensity: 0.25 }); headG.add(scaled(part(AG.cube, g, 0, 0.75, 0), 0.72, 0.18, 0.72)); for (const [x, z] of [[-0.28, 0.28], [0.28, 0.28], [-0.28, -0.28], [0.28, -0.28], [0, 0.28]]) headG.add(scaled(part(AG.cube, g, x, 0.92, z), 0.14, 0.18, 0.14)); headG.add(scaled(part(AG.cube, plainMat('#dc2626', { emissive: '#7f1d1d', emissiveIntensity: 0.4 }), 0, 0.78, 0.37), 0.12, 0.1, 0.02)); }
   if (o.headphones) { headG.add(scaled(part(AG.cube, plainMat('#111827'), 0, 0.72, 0), 0.74, 0.08, 0.2)); for (const s of [-1, 1]) headG.add(scaled(part(AG.cube, plainMat('#ef4444'), s * 0.36, 0.35, 0), 0.1, 0.26, 0.24)); }
   if (o.backpack) { body.add(scaled(part(AG.cube, plainMat('#dc2626'), 0, 1.6, -0.55), 0.85, 0.85, 0.6)); body.add(scaled(part(AG.cube, plainMat('#facc15'), 0, 1.75, -0.86), 0.5, 0.2, 0.02)); }
-  let capeM = null; if (cape || o.cape) { capeM = new THREE.Group(); capeM.position.set(0, 1.98, -0.27); capeM.add(scaled(part(AG.cube, plainMat('#dc2626', { side: THREE.DoubleSide }), 0, -0.75, 0), 0.9, 1.5, 0.05)); body.add(capeM); }
+  if (H === 'race') { const hm2 = plainMat(hc, { roughness: 0.3, metalness: 0.2 }); headG.add(scaled(part(AG.cube, hm2, 0, 0.36, -0.02), 0.78, 0.8, 0.76)); headG.add(scaled(part(AG.cube, plainMat('#1b2340', { roughness: 0.1, metalness: 0.6 }), 0, 0.38, 0.37), 0.62, 0.24, 0.04)); headG.add(scaled(part(AG.cube, plainMat('#ffc425'), 0, 0.77, 0), 0.16, 0.04, 0.78)); headG.add(scaled(part(AG.cube, plainMat('#ffffff'), 0, 0.12, 0.37), 0.5, 0.06, 0.04)); }
+  if (o.mask) { headG.add(scaled(part(AG.cube, plainMat(o.mask), 0, 0.35, 0.005), 0.69, 0.16, 0.67)); for (const sx of [-1, 1]) headG.add(scaled(part(AG.cube, plainMat('#ffffff', { emissive: '#ffffff', emissiveIntensity: 0.25 }), sx * 0.11, 0.355, 0.335), 0.13, 0.07, 0.02)); }
+  let capeM = null; if (cape || o.cape) { const cc = o.capeColor || '#dc2626'; capeM = new THREE.Group(); capeM.position.set(0, 1.98, -0.27); capeM.add(scaled(part(AG.cube, plainMat(cc, { side: THREE.DoubleSide }), 0, -0.75, 0), 0.9, 1.5, 0.05)); if (o.capeColor) { capeM.add(scaled(part(AG.cube, plainMat('#1e5fbf'), 0, -0.02, 0.03), 0.96, 0.1, 0.06)); } body.add(capeM); }
   root.userData = { legs, arms, body, head: headG, torso, cape: capeM, phase: Math.random() * 6, t: Math.random() * 10 };
   return root;
 }
@@ -251,6 +263,7 @@ export function animateAvatar(av, speed, dt) {
 
 // ---------- veículos ----------
 export function buildVehicle(type) {
+  if (type && type.startsWith('vip_')) return buildVipCar(type);
   const B = new Builder();
   if (type === 'bike') {
     for (const z of [-0.65, 0.65]) B.box('tire', 0.1, 0.8, 0.8, 0, 0.4, z, { tile: [0.8, 0.8], fit: true, ao: false });
@@ -275,6 +288,50 @@ export function buildVehicle(type) {
   if (type === 'suv') B.box('metal', W - 0.4, 0.08, 1.6, 0, by + H + cabH + 0.16, cz, { c: '#111827' });
   if (type === 'taxi') B.box('white', 0.7, 0.25, 0.35, 0, by + H + cabH + 0.2, cz, { c: '#111827' });
   return B.build();
+}
+
+// ---------- esportivos VIP (formas genéricas, sem logos) ----------
+function buildVipCar(type) {
+  const B = new Builder(), W = 2.1, by = 0.38;
+  const paint = (w, h, d, x, y, z, c, o = {}) => B.box('carpaint', w, h, d, x, y, z, { c, ao: false, ...o });
+  const glass = (w, h, d, x, y, z) => B.box('carglass', w, h, d, x, y, z, { tile: [1, 1], ao: false });
+  const blk = (w, h, d, x, y, z) => B.box('metal', w, h, d, x, y, z, { c: '#151a2b' });
+  let L, wheelZ;
+  if (type === 'vip_porsche') { // cupê prata, traseira arredondada (fastback)
+    const c = '#c3cad6'; L = 4.3; wheelZ = 1.35;
+    paint(W, 0.55, L, 0, by + 0.28, 0, c);
+    paint(W - 0.1, 0.18, 1.3, 0, by + 0.64, 1.35, c); // capô
+    for (const sx of [-1, 1]) paint(0.42, 0.26, 1.0, sx * 0.78, by + 0.72, 1.45, c); // paralamas altos
+    glass(W - 0.35, 0.42, 1.05, 0, by + 0.98, 0.05); paint(W - 0.35, 0.1, 0.95, 0, by + 1.22, -0.05, c);
+    glass(W - 0.45, 0.36, 0.5, 0, by + 0.95, -0.72); paint(W - 0.25, 0.4, 0.5, 0, by + 0.75, -1.17, c); paint(W - 0.2, 0.24, 0.5, 0, by + 0.67, -1.62, c); paint(W - 0.3, 0.14, 0.34, 0, by + 0.62, -1.98, c);
+    paint(W - 0.5, 0.06, 0.26, 0, by + 0.82, -1.9, '#9aa3b2'); // spoiler discreto
+    for (const sx of [-1, 1]) { B.box('headlight', 0.36, 0.22, 0.06, sx * 0.72, by + 0.62, L / 2 + 0.01, { ao: false }); }
+    B.box('taillight', W - 0.4, 0.1, 0.05, 0, by + 0.46, -L / 2 - 0.01, { ao: false });
+  } else if (type === 'vip_lambo') { // cunha amarela, superbaixa, angulosa
+    const c = '#ffc425'; L = 4.5; wheelZ = 1.45;
+    paint(W + 0.1, 0.45, L, 0, by + 0.22, 0, c);
+    paint(W - 0.1, 0.12, 1.2, 0, by + 0.5, 1.6, c); paint(W - 0.2, 0.14, 0.6, 0, by + 0.42, 2.0, c, {});
+    glass(W - 0.4, 0.36, 1.3, 0, by + 0.63, 0.45); glass(W - 0.5, 0.26, 0.9, 0, by + 0.76, -0.4);
+    paint(W - 0.5, 0.08, 0.9, 0, by + 0.93, -0.35, c); paint(W, 0.3, 1.5, 0, by + 0.6, -1.4, c);
+    for (const sx of [-1, 1]) { blk(0.06, 0.24, 0.8, sx * (W / 2 + 0.07), by + 0.4, -0.6); }
+    blk(W - 0.2, 0.08, 0.4, 0, by + 1.08, -2.0); for (const sx of [-1, 1]) blk(0.08, 0.32, 0.12, sx * 0.7, by + 0.9, -2.0); // asa traseira
+    for (const sx of [-1, 1]) B.box('headlight', 0.5, 0.1, 0.06, sx * 0.68, by + 0.42, L / 2 + 0.01, { ao: false });
+    for (const sx of [-1, 1]) B.box('taillight', 0.55, 0.1, 0.05, sx * 0.62, by + 0.48, -L / 2 - 0.01, { ao: false });
+  } else { // vip_ferrari: vermelha, capô longo, cabine recuada, entradas de ar laterais
+    const c = '#e1251b'; L = 4.6; wheelZ = 1.5;
+    paint(W, 0.5, L, 0, by + 0.25, 0, c);
+    paint(W - 0.12, 0.16, 1.9, 0, by + 0.58, 1.2, c);
+    for (const sx of [-1, 1]) paint(0.4, 0.22, 1.1, sx * 0.8, by + 0.62, -1.3, c);
+    glass(W - 0.35, 0.42, 1.2, 0, by + 0.86, -0.35); paint(W - 0.35, 0.1, 1.0, 0, by + 1.1, -0.45, c);
+    paint(W - 0.2, 0.24, 1.0, 0, by + 0.62, -1.6, c);
+    for (const sx of [-1, 1]) blk(0.06, 0.26, 0.7, sx * (W / 2 + 0.04), by + 0.32, -0.55);
+    blk(W - 0.3, 0.12, 0.08, 0, by + 0.3, L / 2 + 0.02); // grade
+    for (const sx of [-1, 1]) B.box('headlight', 0.42, 0.14, 0.06, sx * 0.7, by + 0.52, L / 2 + 0.01, { ao: false });
+    for (const sx of [-1, 1]) for (const k of [0.45, 0.8]) B.box('taillight', 0.22, 0.22, 0.05, sx * k, by + 0.45, -L / 2 - 0.01, { ao: false });
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { B.box('tire', 0.34, 0.72, 0.72, sx * (W / 2 - 0.08), 0.36, sz * wheelZ, { tile: [0.72, 0.72], fit: true, ao: false }); B.box('metal', 0.36, 0.32, 0.32, sx * (W / 2 - 0.07), 0.36, sz * wheelZ, { c: '#d1d5db' }); }
+  B.box('plate', 0.6, 0.18, 0.04, 0, by + 0.12, -L / 2 - 0.03, { tile: [0.6, 0.2], fit: true, ao: false, ry: Math.PI });
+  const g = B.build(); g.userData.vip = true; return g;
 }
 
 // ---------- céu ----------
