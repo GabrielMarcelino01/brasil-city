@@ -1,0 +1,11 @@
+import { chromium } from 'playwright';
+const url = 'file:///workspace/brasil_game/dist/index.html' + (process.argv[2] || '');
+const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+const page = await ctx.newPage(); const errors = [];
+page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') errors.push(m.type() + ': ' + m.text()); });
+page.on('pageerror', e => errors.push('pageerror: ' + e.message + e.stack));
+await page.goto(url); await page.waitForTimeout(4000);
+await page.screenshot({ path: 'screenshots/v3/tmp/smoke.png', timeout: 90000 });
+console.log(await page.evaluate(() => { const g = window.__game; return g.S ? JSON.stringify({ score: g.cityScore(), ctx: g.ctx() }) : 'no S'; }));
+console.log(errors.join('\n') || 'no errors'); await browser.close();
